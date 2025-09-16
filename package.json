@@ -1,0 +1,8 @@
+{
+  "name": "filemaker-connect",
+  "version": "1.0.0",
+  "description": "A wrapper around the FileMaker Data API",
+  "main": "index.js",
+  "types": "types.d.ts",
+  "type": "module"
+}
