@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 import parseResponse from './parse-response.js';
 import fetchCognitoToken, { refreshToken } from './fetch-cognito-token.js';
 
-const events = {
+export const events = {
   FETCH: 'fetch',
   DESTROY: 'destroy',
   REFRESH: 'refresh',
