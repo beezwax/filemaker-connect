@@ -4,5 +4,9 @@
   "description": "A wrapper around the FileMaker Data API",
   "main": "index.js",
   "types": "types.d.ts",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "amazon-cognito-identity-js": "^6.3.15",
+    "lodash": "^4.17.21"
+  }
 }

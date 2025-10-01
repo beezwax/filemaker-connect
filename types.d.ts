@@ -3,6 +3,19 @@ declare module 'filemaker-connect' {
     [key: string]:  string | number
   }
 
+  export const events: {
+    ERROR: 'error',
+    INVALID_TOKEN: 'invalid-token',
+    REQUEST: 'request',
+    INFO: 'info',
+    RESPONSE: 'response',
+    RESPONSE_SUCCESS: 'response-success',
+    TOKEN_FETCH: 'token-fetch',
+    TOKEN_DESTROY: 'token-destroy',
+    TOKEN_REFRESH: 'token-refresh',
+    TOKEN_COGNITO_REFRESH: 'token-cognito-refresh',
+  };
+
   export interface IFileMakerResponseRow {
     fieldData: IFieldData
     portalData: Record<string, IFieldData[]>

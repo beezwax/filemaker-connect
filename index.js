@@ -1,6 +1,6 @@
 import _ from 'lodash';
 import parseResponse from './parse-response.js';
-import Token from './token.js';
+import Token, { events as tokenEvents } from './token.js';
 
 export const events = {
   ERROR: 'error',
@@ -12,6 +12,7 @@ export const events = {
   TOKEN_FETCH: 'token-fetch',
   TOKEN_DESTROY: 'token-destroy',
   TOKEN_REFRESH: 'token-refresh',
+  TOKEN_COGNITO_REFRESH: 'token-cognito-refresh',
 };
 
 export default class FilemakerConnect {
@@ -22,6 +23,7 @@ export default class FilemakerConnect {
     this.server = params.server;
     this.timeout = Number(params.timeout);
     this.tokenRefreshInterval = Number(params.tokenRefreshInterval);
+    this.clarisRefreshToken = params.clarisRefreshToken;
     this.tokenPool = [];
     this.currentTokenIndex = 0;
     this.callbacks = Object.fromEntries(Object.values(events).map(name => [name, []]));
@@ -45,12 +47,15 @@ export default class FilemakerConnect {
       password: this.password,
       baseUrl: this.#baseUrl,
       ttl: this.tokenRefreshInterval + ttlOffset,
+      useClarisId: this.server.includes('filemaker-cloud.com'),
+      clarisRefreshToken: this.clarisRefreshToken
     });
 
-    token.on('error', data => this.dispatch(events.ERROR, data));
-    token.on('fetch', data => this.dispatch(events.TOKEN_FETCH, data));
-    token.on('destroy', data => this.dispatch(events.TOKEN_DESTROY, data));
-    token.on('refresh', data => this.dispatch(events.TOKEN_REFRESH, data));
+    token.on(tokenEvents.ERROR, data => this.dispatch(events.ERROR, data));
+    token.on(tokenEvents.FETCH, data => this.dispatch(events.TOKEN_FETCH, data));
+    token.on(tokenEvents.DESTROY, data => this.dispatch(events.TOKEN_DESTROY, data));
+    token.on(tokenEvents.REFRESH, data => this.dispatch(events.TOKEN_REFRESH, data));
+    token.on(tokenEvents.COGNITO_REFRESH, data => this.dispatch(events.TOKEN_COGNITO_REFRESH, data));
 
     await token.fetch();
     this.tokenPool.push(token);
@@ -280,7 +285,7 @@ export default class FilemakerConnect {
         return Promise.resolve({ data: [] });
       }
 
-      const cause = responseData.messages.map(m => `Code:${m.code} - ${m.message}`).join(' ');
+      const cause = responseData.messages?.map(m => `Code:${m.code} - ${m.message}`).join(' ');
       this.dispatch(events.ERROR, {
         token,
         response,

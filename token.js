@@ -1,20 +1,24 @@
 import { performance } from 'node:perf_hooks';
 import parseResponse from './parse-response.js';
+import fetchCognitoToken, { refreshToken } from './fetch-cognito-token.js';
 
 const events = {
   FETCH: 'fetch',
   DESTROY: 'destroy',
   REFRESH: 'refresh',
+  COGNITO_REFRESH: 'cognito-refresh',
   ERROR: 'error',
 };
 
 export default class Token {
-  constructor({ username, password, baseUrl, ttl }) {
+  constructor({ clarisRefreshToken, username, password, baseUrl, ttl, useClarisId = false }) {
     this.username = username;
     this.password = password;
     this.baseUrl = baseUrl;
     this.ttl = ttl;
     this.callbacks = Object.fromEntries(Object.values(events).map(name => [name, []]));
+    this.useClarisId = useClarisId
+    this.clarisRefreshToken = clarisRefreshToken;
   }
 
   toString() {
@@ -33,6 +37,12 @@ export default class Token {
   }
 
   authHeaders() {
+    if (this.useClarisId) {
+      return {
+        Authorization: `FMID ${this.clarisIdToken}`,
+        'Content-Type': 'application/json',
+      };
+    }
     const encodedAuth = Buffer.from(`${this.username}:${this.password}`).toString('base64');
     return {
       Authorization: `Basic ${encodedAuth}`,
@@ -40,7 +50,43 @@ export default class Token {
     };
   }
 
+  async fetchCognito() {
+    const start = performance.now();
+    let didRefresh = false;
+    if (this.clarisRefreshToken) {
+      try {
+        this.clarisIdToken = await refreshToken(this.username, this.clarisRefreshToken);
+        return;
+      } catch (err) {
+        if (err.code === 'NotAuthorizedException') {
+          didRefresh = true;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const {
+      cognitoAccessToken,
+      clarisIdToken,
+      clarisRefreshToken,
+    } = await fetchCognitoToken(this.username, this.password);
+    this.cognitoAccessToken = cognitoAccessToken;
+    this.clarisIdToken = clarisIdToken;
+    this.clarisRefreshToken = clarisRefreshToken;
+    if (didRefresh) {
+      this.dispatch(events.COGNITO_REFRESH, {
+        clarisRefreshToken: this.clarisRefreshToken,
+        time: performance.now() - start,
+      });
+    }
+  }
+
   async fetch() {
+    if (this.useClarisId) {
+      await this.fetchCognito();
+    }
+
     const start = performance.now();
     try {
       const response = await fetch(`${this.baseUrl}/sessions`, {
@@ -60,7 +106,7 @@ export default class Token {
 
       if (response.ok) {
         this.token = response.headers.get('X-FM-Data-Access-Token');
-        this.dispatch('fetch', {
+        this.dispatch(events.FETCH, {
           token: this.token,
           response: responseData,
           responseStatus: response.status,
@@ -68,7 +114,7 @@ export default class Token {
         });
         return true;
       } else {
-        this.dispatch('error', {
+        this.dispatch(events.ERROR, {
           token: this.token,
           response: responseData,
           responseStatus: response.status,
@@ -77,7 +123,7 @@ export default class Token {
         return false;
       }
     } catch (error) {
-      this.dispatch('error', {
+      this.dispatch(events.ERROR, {
         token: this.token,
         error,
         time: performance.now() - start,
@@ -97,14 +143,14 @@ export default class Token {
       const responseData = await parseResponse(response);
 
       if (response.ok) {
-        this.dispatch('destroy', {
+        this.dispatch(events.DESTROY, {
           token,
           response: responseData,
           responseStatus: response.status,
           time: performance.now() - start,
         });
       } else {
-        this.dispatch('error', {
+        this.dispatch(events.ERROR, {
           action: 'destroy',
           token: this.token,
           response: responseData,
@@ -113,7 +159,7 @@ export default class Token {
         });
       }
     } catch (error) {
-      this.dispatch('error', {
+      this.dispatch(events.ERROR, {
         action: 'destroy',
         token: this.token,
         error,
