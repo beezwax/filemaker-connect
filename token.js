@@ -88,6 +88,7 @@ export default class Token {
     }
 
     const start = performance.now();
+    let error;
     try {
       const response = await fetch(`${this.baseUrl}/sessions`, {
         method: 'POST',
@@ -120,7 +121,7 @@ export default class Token {
           responseStatus: response.status,
           time: performance.now() - start,
         });
-        return false;
+        error = new Error(responseData.messages.map(m => m.message).join('\n'));
       }
     } catch (error) {
       this.dispatch(events.ERROR, {
@@ -129,6 +130,9 @@ export default class Token {
         time: performance.now() - start,
       });
       return false;
+    }
+    if (error) {
+      throw error;
     }
   }
 
