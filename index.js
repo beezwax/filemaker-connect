@@ -110,7 +110,7 @@ export default class FilemakerConnect {
       });
     }
 
-    return res.data;
+    return res;
   }
 
   /**
