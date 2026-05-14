@@ -131,9 +131,6 @@ export default class Token {
       });
       return false;
     }
-    if (error) {
-      throw error;
-    }
   }
 
   async destroy(token) {
@@ -177,5 +174,15 @@ export default class Token {
 
     await this.fetch();
     await this.destroy(oldToken);
+    await this.kickStart();
+  }
+
+  kickStart() {
+    return fetch(`${this.baseUrl}/layouts`, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+    });
   }
 }

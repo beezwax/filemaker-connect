@@ -100,7 +100,12 @@ export default class FilemakerConnect {
         },
       });
     } else {
-      const searchParams = this.#formatSearchParams({ limit, offset, sort });
+      const searchParams = this.#formatSearchParams({
+        limit,
+        offset,
+        sort,
+        ..._.pickBy(otherOptions, (v, k) => /^(limit|offset)\./.test(k))
+      });
       res = await this.#request({
         ...params,
         url: `/layouts/${layout}/records?${searchParams}`,
@@ -221,6 +226,41 @@ export default class FilemakerConnect {
     return this.#request({ url: `/layouts/${name}`, method: 'GET' });
   }
 
+  async uploadContainerData({ layout, recordId, fieldName, fieldRepitition = 1, fileBlob, fileName }) {
+    const url = `/layouts/${layout}/records/${recordId}/containers/${fieldName}/${fieldRepitition}`;
+    const formData = new FormData();
+    formData.append('upload', fileBlob, fileName);
+
+    return this.#request({
+      body: formData,
+      method: 'POST',
+      url,
+    });
+  }
+
+  async getContainer(url) {
+    if (!this.tokenPool.length) {
+      await this.getToken();
+    }
+
+    const token = this.#getAndRotateToken();
+
+    const cookieResponse = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: 'manual',
+    });
+
+    const response = await fetch(url, {
+      headers: { cookie: cookieResponse.headers.get('set-cookie') ?? '' }
+    });
+
+    if (!response.ok) {
+      throw new Error(response.responseText);
+    }
+
+    return parseResponse(response);
+  }
+
   // private
 
   #getAndRotateToken() {
@@ -244,29 +284,33 @@ export default class FilemakerConnect {
    * @param {Object} [params.script]
    * @param {Number} [params.timeout]
    * @param {Boolean} [retry]
-   * @param {String} [tokenRetry]
    * @returns {Promise<Array<Object>>}
    */
   async #request(params, retry = false) {
-    const { url, method, rejectOnEmpty, script, timeout } = params;
-    let { body } = params;
-    const start = performance.now();
-    body = { ...body, ...this.#formatScriptParam(script) };
+    const { body, url, method, rejectOnEmpty, script, timeout } = params;
 
     if (!this.tokenPool.length) {
       await this.getToken();
     }
 
     const token = this.#getAndRotateToken();
-    const response = await this.#fetchWithLogging(`${this.#baseUrl}${url}`, {
+
+    const options = {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       method,
-      ...(Object.keys(body).length && { body: JSON.stringify(body) }),
       ...(typeof timeout !== 'undefined' && { timeout }),
-    }, params);
+    }
+    const start = performance.now();
+    if ((body instanceof FormData)) {
+      delete options.headers['Content-Type'];
+      options.body = body;
+    } else if (Object.keys(body ?? {}).length) {
+      options.body = JSON.stringify({ ...body, ...this.#formatScriptParam(script) });
+    }
+    const response = await this.#fetchWithLogging(`${this.#baseUrl}${url}`, options, params);
 
     const responseData = await parseResponse(response);
 
@@ -279,13 +323,13 @@ export default class FilemakerConnect {
           time: performance.now() - start,
           options: params,
         });
-        await token.refresh();
+        await token.fetch();
         return this.#request(params, true);
       } else if (responseData.messages?.[0]?.code === '401' && !rejectOnEmpty) {
         return Promise.resolve({ data: [] });
       }
 
-      const cause = responseData.messages?.map(m => `Code:${m.code} - ${m.message}`).join(' ');
+      const cause = responseData.messages?.map(m => `${m.code ? `Code:${m.code} - `: ''}${m.message}`).join(' ');
       this.dispatch(events.ERROR, {
         token,
         response,
